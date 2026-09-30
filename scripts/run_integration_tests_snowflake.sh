@@ -37,6 +37,10 @@ echo "==> Running dbt build"
 dbt build --target snowflake --exclude agent_with_search \
     --vars "{eval_stage: '@${SNOWFLAKE_TEST_DATABASE}.${SNOWFLAKE_TEST_SCHEMA}.eval_stage'}"
 
+echo "==> Building the evaluation fixture with --empty (as Slim CI does; ref() renders as a subquery)"
+dbt build --empty --target snowflake --select agent_eval \
+    --vars "{eval_stage: '@${SNOWFLAKE_TEST_DATABASE}.${SNOWFLAKE_TEST_SCHEMA}.eval_stage'}"
+
 echo "==> Asserting agents exist"
 dbt run-operation assert_agents_exist --target snowflake
 

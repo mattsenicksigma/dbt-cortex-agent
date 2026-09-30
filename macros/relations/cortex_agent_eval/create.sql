@@ -52,7 +52,10 @@
 
   {{ run_hooks(pre_hooks) }}
 
-  {%- set config_sql = sql -%}
+  {#- `dbt build --empty` renders ref()/source() as a subquery, which is not a name Snowflake accepts here -#}
+  {%- set unwrapped = dbt_cortex_agent._cortex_eval_unwrap_empty_refs(parsed) -%}
+
+  {%- set config_sql = toyaml(parsed) if unwrapped else sql -%}
   {%- if 'dataset' in parsed -%}
     {%- set dataset_name = dbt_cortex_agent._cortex_eval_register_dataset(parsed['dataset'], target_relation) -%}
     {%- do parsed.pop('dataset') -%}
@@ -87,6 +90,53 @@
   {{ return({'relations': [target_relation]}) }}
 
 {% endmacro %}
+
+
+{% macro _cortex_eval_unwrap_empty(value) -%}
+{#-
+--  `dbt build --empty` makes ref() and source() render as
+--  `(select * from <relation> where false limit 0)` instead of `<relation>`.
+--  Inside an evaluation YAML that is just a name (a table_name, agent_name, ...),
+--  so return the underlying relation. Any other value is returned unchanged.
+-#}
+  {%- set m = modules.re.match('^\\(select \\* from (.+?)(?: where false)? limit 0\\)$', value | string) -%}
+  {{- return(m.group(1) if m else value) -}}
+{%- endmacro %}
+
+
+{% macro _cortex_eval_unwrap_empty_refs(parsed) -%}
+{#-
+--  Unwraps `--empty` ref() renderings (see _cortex_eval_unwrap_empty) in place, in
+--  the fields that hold Snowflake object names. Returns true if anything changed,
+--  so the caller knows the YAML must be re-serialized.
+-#}
+  {%- set ns = namespace(changed=false) -%}
+  {%- set targets = [] -%}
+  {%- if parsed.get('dataset') is mapping -%}
+    {%- do targets.append([parsed['dataset'], 'table_name']) -%}
+    {%- do targets.append([parsed['dataset'], 'dataset_name']) -%}
+  {%- endif -%}
+  {%- if parsed['evaluation'] is mapping -%}
+    {%- if parsed['evaluation'].get('agent_params') is mapping -%}
+      {%- do targets.append([parsed['evaluation']['agent_params'], 'agent_name']) -%}
+    {%- endif -%}
+    {%- if parsed['evaluation'].get('source_metadata') is mapping -%}
+      {%- do targets.append([parsed['evaluation']['source_metadata'], 'dataset_name']) -%}
+    {%- endif -%}
+  {%- endif -%}
+  {%- for target in targets -%}
+    {%- set holder = target[0] -%}
+    {%- set key = target[1] -%}
+    {%- if key in holder -%}
+      {%- set clean = dbt_cortex_agent._cortex_eval_unwrap_empty(holder[key]) -%}
+      {%- if clean != holder[key] -%}
+        {%- do holder.update({key: clean}) -%}
+        {%- set ns.changed = true -%}
+      {%- endif -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {{- return(ns.changed) -}}
+{%- endmacro %}
 
 
 {% macro _cortex_eval_register_dataset(dataset, model_relation) -%}

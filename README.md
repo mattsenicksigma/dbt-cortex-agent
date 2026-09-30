@@ -562,6 +562,7 @@ Configs can be set top-level or under `meta`. Standard dbt configs (`alias`, `ta
 >   **`EXECUTE TASK ON ACCOUNT`**. Without `EXECUTE TASK`, `START` succeeds but the run stays in
 >   `CREATED` indefinitely, so `wait: true` will time out. See the
 >   [access control requirements](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents-evaluations).
+> - `dbt build --empty` is supported: it renders `ref()` and `source()` as subqueries, and the materialization unwraps them back to the real relation names in `table_name`, `agent_name` and the dataset names, so the eval still deploys (useful for CI that builds with `--empty`).
 > - The evaluation YAML must not contain `$$` (used as the SQL dollar-quote delimiter internally).
 > - The uploaded YAML is re-serialized when a `dataset:` block is present, so comments and key order
 >   are not preserved in the staged copy (its meaning is unchanged).
